@@ -1,10 +1,11 @@
 package main
 
 import (
+	"encoding/json"
 	"fmt"
 	"github.com/PuerkitoBio/goquery"
 	"io/ioutil"
-	"log"
+	"os"
 	"strings"
 )
 
@@ -51,7 +52,8 @@ type Index struct {
 	bps            string
 }
 
-func GetPage(url string) {
+func getPage(code string, f *os.File) {
+	var url string = fmt.Sprintf("http://stocks.finance.yahoo.co.jp/stocks/detail/?code=%s", code)
 	var b *Basis = &Basis{}
 	var i *Index = &Index{}
 	var m *Margin = &Margin{}
@@ -73,25 +75,36 @@ func GetPage(url string) {
 	textMap("div.ymuiDotLine div.yjMS dd.ymuiEditLink strong", &m.margin_buying, &m.d_margin_buying, &m.margin_rate, &m.margin_selling, &m.d_margin_selling)
 	textMap("div#main div.main2colR div.chartFinance div.lineFi dl dd strong", &b.capitalization, &b.shares_outstanding, &b.dividend_yield, &i.dps, &i.per, &i.pbr, &i.eps, &i.bps, &b.minimum_purchase, &b.share_unit, &b.yearly_high, &b.yearly_low)
 
-	fmt.Println(*b)
-	fmt.Println(*i)
-	fmt.Println(*m)
+	mapB, _ := json.Marshal(map[string]string{"name": b.title, "price": i.price})
+	fmt.Println(string(mapB))
+
+	row := fmt.Sprint(string(mapB), ",")
+
+	_, err := f.WriteString(row)
+	check(err)
 }
 
 func main() {
-	dat, err := ioutil.ReadFile("./codes")
+	f, err := os.OpenFile("./output.txt", os.O_APPEND|os.O_WRONLY, 0600)
+	check(err)
+	_, err = f.WriteString("[")
 	check(err)
 
-	var limit = make(chan int, 10)
-	for _, i := range strings.Split(string(dat), "\n") {
-		go func(i string) {
-			limit <- 1
-			var url string = fmt.Sprintf("http://stocks.finance.yahoo.co.jp/stocks/detail/?code=%s", i)
-			GetPage(url)
-			log.Println("Finish: ", url)
+	defer func() {
+		f.Close()
+		_, err := f.WriteString("]")
+		check(err)
+	}()
 
+	dat, err := ioutil.ReadFile("./codes")
+
+	var limit = make(chan int, 10)
+	for _, code := range strings.Split(string(dat), "\n") {
+		go func(code string) {
+			limit <- 1
+			getPage(code, f)
 			<-limit
-		}(i)
+		}(code)
 	}
 	select {}
 }
